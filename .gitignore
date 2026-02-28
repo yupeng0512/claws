@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+logs/
+memory/raw/
+memory/deep-dives/
+memory/reflections/
+memory/reviews/
+memory/feedback/
+*.log
+.DS_Store

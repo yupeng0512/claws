@@ -1,0 +1,88 @@
+# CLAWS Agent 架构配置
+# =====================
+#
+# 四个独立 Agent（Scout/Analyst/Evolve/Reviewer），各自拥有专用 Knot Agent ID。
+# 由本地调度器 (APScheduler) 按 Pipeline 顺序编排调用。
+#
+# Pipeline:
+#   Phase 1: scout    — 多源信息采集 + 品味初筛
+#   Phase 2: analyst  — 深度分析 + 商业评估
+#   Phase 3: evolve   — 反思 + 品味自进化
+#   Phase 4: reviewer — 独立审查 + 反馈回路
+#
+# 每个 Agent 的完整定义（含元数据 + Prompt）在 config/agents/<name>/main.md
+# 所有 Agent 共用同一个云工作区，可读写 /data/workspace/claws/ 下的文件
+
+runtime: knot
+
+defaults:
+  base_url: ${KNOT_API_BASE_URL}
+  timeout: 180
+  workspace_uuid: ${KNOT_WORKSPACE_UUID}
+
+agents:
+  # ── 侦察兵：快速扫描 + 品味过滤 ──
+  scout:
+    description: "信息侦察兵 — 快速扫描多源信息，用品味模型初筛"
+    agent_id: ${KNOT_SCOUT_AGENT_ID}
+    model: deepseek-v3.2
+    temperature: 0.6
+    enable_web_search: true
+    prompt_file: config/agents/scout/main.md
+    cloud_workspace: true
+    mcp_deps: []
+
+  # ── 分析师：深度研究 + 结构化输出 ──
+  analyst:
+    description: "深度分析师 — 对高分目标做深度研究，生成结构化分析报告"
+    agent_id: ${KNOT_ANALYST_AGENT_ID}
+    model: claude-4.5-sonnet
+    temperature: 0.3
+    enable_web_search: true
+    prompt_file: config/agents/analyst/main.md
+    cloud_workspace: true
+    mcp_deps: []
+
+  # ── 进化者：反思 + 自进化 + 上下文改写 ──
+  evolve:
+    description: "品味进化者 — 反思探索质量，迭代品味模型，改写上下文文件"
+    agent_id: ${KNOT_EVOLVE_AGENT_ID}
+    model: claude-4.5-sonnet
+    temperature: 0.4
+    enable_web_search: false
+    prompt_file: config/agents/evolve/main.md
+    cloud_workspace: true
+    mcp_deps: []
+
+  # ── 审查者：独立审计 + 商业评估 + 盲区检测 ──
+  reviewer:
+    description: "独立审查者 — 上帝视角评估探索质量，替代人工反馈回路"
+    agent_id: ${KNOT_REVIEWER_AGENT_ID}
+    model: claude-4.5-sonnet
+    temperature: 0.3
+    enable_web_search: true
+    prompt_file: config/agents/reviewer/main.md
+    cloud_workspace: true
+    mcp_deps: []
+
+# Pipeline 调度
+schedule:
+  sense:
+    agent: scout
+    interval_hours: 4
+
+  dive:
+    agent: analyst
+    cron: "0 10,22 * * *"
+
+  reflect:
+    agent: evolve
+    cron: "0 21 * * *"
+
+  review:
+    agent: reviewer
+    cron: "30 21 * * *"
+
+  weekly:
+    agent: evolve
+    cron: "0 15 * * 0"

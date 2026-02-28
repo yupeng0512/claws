@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  claws:
+    build: .
+    container_name: claws
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./memory:/app/memory
+      - ./logs:/app/logs
+      - ./TASTE.md:/app/TASTE.md
+      - ./SOUL.md:/app/SOUL.md
+      - ./CLAWS.md:/app/CLAWS.md
+      - ./config:/app/config:ro
+    networks:
+      - ops-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  ops-net:
+    external: true
