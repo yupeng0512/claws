@@ -1,38 +1,18 @@
 #!/usr/bin/env python3
 """
-CLAWS Runner v2 — Continuous Learning And Working System
+CLAWS Runner v3 — Continuous Learning And Working System
 =========================================================
 
 基于 Knot Agent (AG-UI) 的自主探索系统。
 一主多从 Pipeline 架构，品味自进化。
 
-架构（参考 alpha-radar Pipeline 模式）:
-
-  本地调度器 (APScheduler)
-       │
-       ├── Phase 1: Scout (侦察兵)
-       │   ├── deepseek-v3.2 + web search
-       │   └── 快速扫描 + 品味过滤
-       │
-       ├── Phase 2: Analyst (分析师)
-       │   ├── claude-4.5-sonnet + web search
-       │   └── 深度研究 + 结构化报告
-       │
-       ├── Phase 3: Evolve (进化者)
-       │   ├── claude-4.5-sonnet
-       │   └── 反思 + 品味自进化
-       │
-       └── Phase 4: Reviewer (审查者)
-           ├── claude-4.5-sonnet + web search
-           └── 独立审计 + 商业评估 + 盲区检测
-
-自进化机制:
-  Evolve agent 输出 JSON → Runner 写入:
-  - TASTE.md   (品味模型)
-  - SOUL.md    (探索者灵魂)
-  - DISCOVERIES.md (发现库)
-  所有修改都有版本追踪 (memory/taste-changelog.md)
-  Reviewer 提供自动反馈信号 (memory/feedback/)
+v3 增强:
+  - Pipeline 状态机 (断点恢复 + 失败重试)
+  - 会话持久化 (conversation_id 复用)
+  - 记忆系统 (SQLite FTS5 全文检索)
+  - 预注入上下文 (运行统计 + 记忆检索)
+  - 推送格式规范化 (5 种纯文本模板)
+  - 自进化增强 (周度系统统计驱动参数调整)
 
 运行:
   python claws_runner.py                # 守护进程
@@ -120,27 +100,57 @@ def ops_report(level: str, category: str, title: str, detail: str = "", action_h
 
 # ─── 飞书推送 ───
 
-FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK_URL", "")
+
+def _feishu_url() -> str:
+    return os.getenv("FEISHU_WEBHOOK_URL", "")
+
+
+def _is_flow_webhook(url: str) -> bool:
+    return "trigger-webhook" in url or "botbuilder" in url
 
 
 async def _feishu_send(payload: dict) -> bool:
-    if not FEISHU_WEBHOOK:
+    url = _feishu_url()
+    if not url:
         return False
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(FEISHU_WEBHOOK, json=payload)
+            resp = await client.post(url, json=payload)
             data = resp.json()
-            return data.get("code") == 0 or data.get("StatusCode") == 0
+            ok = data.get("code") == 0 or data.get("StatusCode") == 0
+            if not ok:
+                err = data.get("msg") or data.get("StatusMessage", "未知错误")
+                log.warning(f"飞书推送失败: {err}")
+            return ok
     except Exception as e:
-        log.warning(f"飞书推送失败: {e}")
+        log.warning(f"飞书推送异常: {e}")
         return False
 
 
 async def feishu_text(content: str) -> bool:
-    return await _feishu_send({"msg_type": "text", "content": {"text": content}})
+    """发送飞书文本消息，超长时自动分段发送。"""
+    parts = _split_message(content)
+    if len(parts) == 1:
+        return await _feishu_send({"msg_type": "text", "content": {"text": content}})
+    ok = True
+    for i, part in enumerate(parts):
+        if i > 0:
+            await asyncio.sleep(0.5)
+        header = f"({i+1}/{len(parts)})\n" if len(parts) > 1 else ""
+        if not await _feishu_send({"msg_type": "text", "content": {"text": header + part}}):
+            ok = False
+    return ok
 
 
 async def feishu_card(title: str, md_content: str, color: str = "blue") -> bool:
+    """发送飞书消息。Flow webhook 使用 text 格式，群机器人使用 interactive 卡片。"""
+    url = _feishu_url()
+    text = f"{title}\n{'─' * 30}\n{md_content}"
+    if _is_flow_webhook(url):
+        return await _feishu_send({
+            "msg_type": "text",
+            "content": {"text": text},
+        })
     return await _feishu_send({
         "msg_type": "interactive",
         "card": {
@@ -148,6 +158,197 @@ async def feishu_card(title: str, md_content: str, color: str = "blue") -> bool:
             "elements": [{"tag": "markdown", "content": md_content}],
         },
     })
+
+
+# ─── 推送模板（纯文本，Flow Webhook 兼容）───
+
+_PUSH_MAX_LEN = 4000
+_PUSH_SPLIT_THRESHOLD = 4000
+
+
+def _truncate(text: str, limit: int = _PUSH_MAX_LEN) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit - 10] + "\n(已截断)"
+
+
+def _split_message(text: str, limit: int = _PUSH_SPLIT_THRESHOLD) -> list[str]:
+    """将超长消息按段落边界拆分为多条，避免截断。"""
+    if len(text) <= limit:
+        return [text]
+    parts: list[str] = []
+    lines = text.split("\n")
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current_len + line_len > limit and current:
+            parts.append("\n".join(current))
+            current = [line]
+            current_len = line_len
+        else:
+            current.append(line)
+            current_len += line_len
+    if current:
+        parts.append("\n".join(current))
+    return parts
+
+
+def _fmt_sense(items: list, meta: str, deep_count: int, watch_count: int, total: int) -> str:
+    lines = [
+        f"🦀 CLAWS 侦察报告",
+        f"{'─' * 30}",
+        f"扫描 {total} 项 → {deep_count} 个值得深挖：",
+    ]
+    for d in sorted(items, key=lambda x: x.get("total_score", 0), reverse=True):
+        if d.get("verdict") == "deep_dive":
+            lines.append(f"  • {d.get('title', '?')} ({d.get('total_score', 0)}/25)")
+    if watch_count:
+        lines.append(f"\n观察列表 ({watch_count} 项)：")
+        for d in items:
+            if d.get("verdict") == "watch":
+                lines.append(f"  ◦ {d.get('title', '?')} ({d.get('total_score', 0)}/25)")
+    lines.append("")
+    for i, d in enumerate(items, 1):
+        sc = d.get("total_score", 0)
+        verdict = "🔍" if d.get("verdict") == "deep_dive" else "👀"
+        lines.append(f"{i}. {verdict} {d.get('title', '?')} ({sc}/25)")
+        lines.append(f"   {d.get('one_liner', '')}")
+        if d.get("url"):
+            lines.append(f"   {d['url']}")
+        reason = d.get("reason", "")
+        if reason:
+            lines.append(f"   理由: {reason}")
+        lines.append("")
+    if meta:
+        lines.extend(["", f"趋势: {meta[:600]}"])
+    return "\n".join(lines)
+
+
+def _fmt_dive(meta: dict, content: str) -> str:
+    items_str = ", ".join(meta.get("analyzed_items", [])[:3])
+    confidence = meta.get("confidence", "?")
+    insight = meta.get("key_insight", "")
+    lines = [
+        f"[深度分析] {_now()}",
+        f"{'─' * 30}",
+        f"分析目标: {items_str}",
+        f"置信度: {confidence}",
+        "",
+        f"核心洞察: {insight}",
+    ]
+    if content:
+        preview = content.strip()[:2000]
+        lines.extend(["", preview])
+    return "\n".join(lines)
+
+
+def _fmt_reflect(data: dict) -> str:
+    refl = data.get("reflection", {})
+    stats = refl.get("stats", {})
+    taste_evo = data.get("taste_evolution", {})
+    new_disc = data.get("new_discoveries", [])
+    push = data.get("push_to_human")
+
+    lines = [
+        f"[反思 & 进化] {_now()}",
+        f"{'─' * 30}",
+    ]
+    if stats:
+        lines.append(
+            f"漏斗: 扫描{stats.get('scanned', '?')} -> "
+            f"筛选{stats.get('filtered_in', '?')} -> "
+            f"深挖{stats.get('deep_dived', '?')} -> "
+            f"发现{stats.get('discoveries', '?')} "
+            f"(通过率{stats.get('pass_rate_percent', '?')}%)"
+        )
+
+    if isinstance(taste_evo, dict):
+        changes = taste_evo.get("changes", [])
+        version = taste_evo.get("version", "")
+        if changes:
+            lines.extend(["", f"品味进化 -> {version}"])
+            for c in changes[:5]:
+                lines.append(f"  {c.get('field', '?')}: {str(c.get('old_value', '?'))[:30]} -> {str(c.get('new_value', '?'))[:30]}")
+
+    if new_disc:
+        lines.extend(["", f"新增 {len(new_disc)} 条发现:"])
+        for d in new_disc[:5]:
+            lines.append(f"  - {d.get('title', '?')} ({d.get('score', '?')}/25)")
+
+    if push and push != "null":
+        lines.extend(["", f"Evolve: {str(push)[:600]}"])
+
+    return "\n".join(lines)
+
+
+def _fmt_review(parsed: dict) -> str:
+    grade = parsed.get("overall_grade", "?")
+    action_score = parsed.get("actionability_score", "?")
+    verdict = parsed.get("one_line_verdict", "")
+    taste = parsed.get("taste_audit", {})
+
+    lines = [
+        f"[审查报告] {_now()}",
+        f"{'─' * 30}",
+        f"评级: {grade} | 可执行性: {action_score}/10",
+        f"结论: {verdict}",
+    ]
+
+    if taste:
+        echo = taste.get("echo_chamber_risk", "?")
+        diversity = taste.get("diversity_score", "?")
+        lines.extend(["", f"信息茧房风险: {echo} | 多样性: {diversity}/10"])
+        blind = taste.get("blind_spots", [])
+        if blind:
+            lines.append(f"盲区: {', '.join(blind[:5])}")
+
+    commercial = parsed.get("commercial_review", [])
+    if commercial:
+        lines.append("")
+        for cr in commercial[:3]:
+            pot = cr.get("market_potential", "?")
+            lines.append(f"  {cr.get('discovery', '?')}: 市场{pot} | {cr.get('verdict', '?')}")
+
+    return "\n".join(lines)
+
+
+def _fmt_weekly(data: dict, content: str) -> str:
+    refl = data.get("reflection", {})
+    stats = refl.get("stats", {})
+    taste_evo = data.get("taste_evolution", {})
+    new_disc = data.get("new_discoveries", [])
+
+    lines = [
+        f"[周报] {_now()}",
+        f"{'─' * 30}",
+    ]
+    if stats:
+        lines.append(
+            f"本周: 扫描{stats.get('scanned', '?')} -> "
+            f"筛选{stats.get('filtered_in', '?')} -> "
+            f"深挖{stats.get('deep_dived', '?')} -> "
+            f"发现{stats.get('discoveries', '?')}"
+        )
+
+    if isinstance(taste_evo, dict):
+        version = taste_evo.get("version", "")
+        changes = taste_evo.get("changes", [])
+        if changes:
+            lines.extend(["", f"品味进化 -> {version} (变更 {len(changes)} 项)"])
+            for c in changes[:5]:
+                lines.append(f"  {c.get('field', '?')}: {str(c.get('old_value', '?'))[:25]} -> {str(c.get('new_value', '?'))[:25]}")
+
+    if new_disc:
+        lines.extend(["", f"本周发现 ({len(new_disc)} 条):"])
+        for d in new_disc[:5]:
+            lines.append(f"  - {d.get('title', '?')} ({d.get('score', '?')}/25)")
+
+    summary = refl.get("summary", "")
+    if summary:
+        lines.extend(["", f"总结: {summary}"])
+
+    return "\n".join(lines)
 
 
 # ─── .env 加载 ───
@@ -177,7 +378,7 @@ class AgentConfig:
     temperature: float = 0.3
     enable_web_search: bool = False
     prompt_file: str = ""
-    timeout: int = 180
+    timeout: int = 1800
     base_url: str = "http://knot.woa.com"
     api_token: str = ""
     agent_token: str = ""
@@ -207,7 +408,7 @@ def load_agents() -> dict[str, AgentConfig]:
       方式 2: 智能体 Token (KNOT_<NAME>_AGENT_TOKEN) + 用户名 — per-agent 独立密钥
     """
     default_base = os.getenv("KNOT_API_BASE_URL", "http://knot.woa.com")
-    default_timeout = int(os.getenv("KNOT_TIMEOUT", "180"))
+    default_timeout = int(os.getenv("KNOT_TIMEOUT", "1800"))
     default_workspace = os.getenv("KNOT_WORKSPACE_UUID", "")
     personal_token = os.getenv("KNOT_API_TOKEN", "")
     username = os.getenv("KNOT_USERNAME", "")
@@ -318,7 +519,7 @@ class KnotClient:
                 headers["X-Username"] = self.cfg.username
 
         try:
-            timeout = httpx.Timeout(connect=30.0, read=600.0, write=30.0, pool=30.0)
+            timeout = httpx.Timeout(connect=60.0, read=1800.0, write=60.0, pool=60.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream("POST", self.api_url, json=body, headers=headers) as resp:
                     if resp.status_code != 200:
@@ -357,80 +558,46 @@ class KnotClient:
 
 
 def extract_json(text: str) -> Optional[dict]:
-    """多层容错 JSON 提取（含 CJK 引号修复和未转义引号修复）。"""
+    """从 Agent 响应中提取 JSON（基于 json_repair 的多层容错）。
+
+    策略：标准解析 → json_repair → 代码块提取 → 大括号贪婪提取
+    """
     if not text:
         return None
     text = text.strip().lstrip("\ufeff")
 
-    def _try(s: str) -> Optional[dict]:
-        for strict in (True, False):
+    try:
+        import json_repair as jr
+    except ImportError:
+        jr = None
+        log.warning("json_repair 未安装，回退到 json.loads")
+
+    def _try_parse(s: str) -> Optional[dict]:
+        try:
+            r = json.loads(s)
+            if isinstance(r, dict):
+                return r
+        except (json.JSONDecodeError, ValueError):
+            pass
+        if jr:
             try:
-                r = json.loads(s, strict=strict)
+                r = jr.loads(s)
                 if isinstance(r, dict):
                     return r
-            except json.JSONDecodeError:
+            except Exception:
                 pass
         return None
 
-    def _fix_and_try(s: str) -> Optional[dict]:
-        s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", s)
-        s = re.sub(r",\s*([\]}])", r"\1", s)
-        s = s.replace("\u201c", '\\"').replace("\u201d", '\\"')
-        s = s.replace("\u2018", "\\'").replace("\u2019", "\\'")
-        if (r := _try(s)):
-            return r
-        # Fix unescaped quotes inside string values:
-        # Find patterns like "key": "...text with "quotes" inside..."
-        # by replacing inner quotes with escaped quotes
-        fixed = _fix_inner_quotes(s)
-        return _try(fixed)
-
-    def _fix_inner_quotes(s: str) -> str:
-        """Attempt to fix unescaped double quotes inside JSON string values."""
-        result = []
-        i = 0
-        in_string = False
-        escaped = False
-        while i < len(s):
-            ch = s[i]
-            if escaped:
-                result.append(ch)
-                escaped = False
-            elif ch == '\\':
-                result.append(ch)
-                escaped = True
-            elif ch == '"':
-                if not in_string:
-                    in_string = True
-                    result.append(ch)
-                else:
-                    # Look ahead: if next non-whitespace is : , ] } or end, it's a real close
-                    rest = s[i+1:].lstrip()
-                    if not rest or rest[0] in ':,]}':
-                        in_string = False
-                        result.append(ch)
-                    else:
-                        result.append('\\"')
-            else:
-                result.append(ch)
-            i += 1
-        return ''.join(result)
-
-    if (r := _try(text)):
+    if (r := _try_parse(text)):
         return r
 
     for m in re.findall(r"```(?:json)?\s*([\s\S]*?)\s*```", text):
-        if (r := _try(m)):
-            return r
-        if (r := _fix_and_try(m)):
+        if (r := _try_parse(m)):
             return r
 
     s, e = text.find("{"), text.rfind("}")
     if s >= 0 and e > s:
-        c = text[s:e + 1]
-        if (r := _try(c)):
-            return r
-        if (r := _fix_and_try(c)):
+        if (r := _try_parse(text[s:e + 1])):
             return r
 
     return None
@@ -512,7 +679,49 @@ def _discoveries_summary() -> str:
     return "已有发现：\n" + "\n".join(lines[-20:]) if lines else "(尚无已有发现)"
 
 
+# ─── 会话持久化 ───
+
+
+class SessionManager:
+    """Persist Knot Agent conversation_id per agent for cross-turn context."""
+
+    def __init__(self, path: Path):
+        self._path = path
+        self._sessions: dict[str, str] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if self._path.exists():
+            try:
+                self._sessions = json.loads(self._path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, TypeError):
+                self._sessions = {}
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(self._sessions, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def get(self, agent_name: str) -> str:
+        return self._sessions.get(agent_name, "")
+
+    def update(self, agent_name: str, conversation_id: str) -> None:
+        if conversation_id:
+            self._sessions[agent_name] = conversation_id
+            self._save()
+
+    def reset(self, agent_name: str) -> None:
+        self._sessions.pop(agent_name, None)
+        self._save()
+
+    def reset_all(self) -> None:
+        self._sessions.clear()
+        self._save()
+
+
 # ─── CLAWS Pipeline Engine ───
+
+from pipeline_state import PipelineStateManager
+from memory_store import MemoryStore
 
 class RunStats:
     """单次 Pipeline 运行统计。"""
@@ -544,6 +753,9 @@ class ClawsPipeline:
         self.clients = {name: KnotClient(cfg) for name, cfg in agents.items()}
         self._consecutive_failures: dict[str, int] = {n: 0 for n in agents}
         self._run_history: list[dict] = []
+        self.state = PipelineStateManager(MEMORY_DIR / "state")
+        self.sessions = SessionManager(MEMORY_DIR / "sessions.json")
+        self.memory = MemoryStore(MEMORY_DIR)
 
     def _taste(self) -> str:
         t = _read(ROOT / "TASTE.md")
@@ -563,13 +775,65 @@ class ClawsPipeline:
         content = files[0].read_text(encoding="utf-8")
         return f"最近一次审查反馈 ({files[0].stem}):\n{content[:3000]}"
 
-    async def _call_agent(self, name: str, prompt: str, phase: str = "") -> dict[str, Any]:
+    def _format_week_stats(self, stats: dict) -> str:
+        """Format weekly pipeline stats for injection into the Evolve prompt."""
+        lines = [
+            f"总执行: {stats.get('total_runs', 0)} 次 | "
+            f"成功: {stats.get('successes', 0)} | "
+            f"失败: {stats.get('failures', 0)} | "
+            f"成功率: {stats.get('success_rate', 0)}%",
+            "",
+        ]
+        by_phase = stats.get("by_phase", {})
+        for phase, info in by_phase.items():
+            s, f, sk = info.get("success", 0), info.get("fail", 0), info.get("skip", 0)
+            avg = info.get("avg_attempts", 0)
+            lines.append(f"  {phase}: 成功{s} 失败{f} 跳过{sk} (平均尝试{avg}次)")
+
+        run_hist = self._run_history[-20:]
+        if run_hist:
+            lines.extend(["", "最近执行耗时:"])
+            for r in run_hist[-10:]:
+                lines.append(f"  {r.get('phase', '?')}: {r.get('elapsed_s', '?')}s, {r.get('chars', 0)} chars" +
+                             (f" ERROR: {r['error'][:60]}" if r.get("error") else ""))
+
+        return "\n".join(lines)
+
+    def _build_run_stats_context(self) -> str:
+        """Build a summary of pipeline run stats for injection into prompts."""
+        today_summary = self.state.get_today_summary()
+        lines = ["[Runner 运行状态]"]
+        for phase, info in today_summary.items():
+            status = info["status"]
+            if status != "pending":
+                line = f"  {phase}: {status}"
+                if info["attempts"] > 1:
+                    line += f" (第{info['attempts']}次)"
+                if info["error"]:
+                    line += f" - {info['error'][:80]}"
+                lines.append(line)
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _build_memory_context(self, keywords: list[str]) -> str:
+        """Search memory store for relevant context based on keywords."""
+        parts = []
+        for kw in keywords[:3]:
+            ctx = self.memory.format_context(kw, top_k=3)
+            if ctx:
+                parts.append(ctx)
+        return "\n\n".join(parts)
+
+    async def _call_agent(self, name: str, prompt: str, phase: str = "", new_session: bool = False) -> dict[str, Any]:
         client = self.clients[name]
         cfg = self.agents[name]
-        log.info(f"调用 {name} agent (model={cfg.model}, web_search={cfg.enable_web_search})")
+        conv_id = "" if new_session else self.sessions.get(name)
+        log.info(f"调用 {name} agent (model={cfg.model}, web_search={cfg.enable_web_search}, conv={conv_id[:12]}...)" if conv_id else f"调用 {name} agent (model={cfg.model}, web_search={cfg.enable_web_search}, new_session)")
         start = time.monotonic()
-        result = await client.chat(prompt)
+        result = await client.chat(prompt, conversation_id=conv_id)
         elapsed = time.monotonic() - start
+
+        if result.get("conversation_id"):
+            self.sessions.update(name, result["conversation_id"])
 
         stats = RunStats()
         stats.phase = phase or name
@@ -603,12 +867,23 @@ class ClawsPipeline:
         log.info("Phase 1: SENSE + FILTER (Scout)")
         log.info("=" * 60)
 
+        can, reason = self.state.can_run("sense")
+        if not can:
+            log.info(f"跳过 SENSE: {reason}")
+            return
+        self.state.mark_running("sense")
+
         prompt = _load_prompt(self.agents["scout"].prompt_file,
                               taste_context=self._taste(),
                               existing_discoveries=_discoveries_summary())
 
+        run_stats_ctx = self._build_run_stats_context()
+        if run_stats_ctx:
+            prompt += f"\n\n{run_stats_ctx}"
+
         result = await self._call_agent("scout", prompt, phase="sense")
         if result["error"]:
+            self.state.mark_failed("sense", result["error"])
             return
 
         today = _today()
@@ -619,6 +894,7 @@ class ClawsPipeline:
             log.warning("JSON 解析失败，原始数据已保存到 raw/")
             ops_report("warning", "json_parse_failed", "Scout JSON 解析失败",
                        detail=result["content"][:500])
+            self.state.mark_failed("sense", "JSON 解析失败")
             return
 
         items = parsed["items"]
@@ -629,7 +905,7 @@ class ClawsPipeline:
         filtered_md = f"# Filtered — {_now()}\n\n"
         filtered_md += f"deep_dive: {len(deep)} | watch: {len(watch)} | total: {len(items)}\n\n"
         if parsed.get("meta_observation"):
-            filtered_md += f"**趋势观察**: {parsed['meta_observation']}\n\n"
+            filtered_md += f"趋势观察: {parsed['meta_observation']}\n\n"
         for item in sorted(items, key=lambda x: x.get("total_score", 0), reverse=True):
             sc = item.get("scores", {})
             filtered_md += f"### {item.get('title', '?')} ({item.get('total_score', 0)}/25) [{item.get('verdict', '?')}]\n"
@@ -641,13 +917,12 @@ class ClawsPipeline:
             filtered_md += "\n"
         _write(MEMORY_DIR / "filtered" / f"{today}.md", filtered_md)
 
-        if deep:
-            summary_lines = [f"扫描 {len(items)} 项 → {len(deep)} 个值得深挖："]
-            for d in deep[:3]:
-                summary_lines.append(f"  • {d.get('title', '?')} ({d.get('total_score', 0)}/25)")
-            if parsed.get("meta_observation"):
-                summary_lines.append(f"\n趋势: {parsed['meta_observation'][:100]}")
-            await feishu_card("🦀 CLAWS 侦察报告", "\n".join(summary_lines), "blue")
+        self.state.mark_success("sense")
+
+        if deep or watch:
+            display_items = deep + watch
+            msg = _fmt_sense(display_items, parsed.get("meta_observation", ""), len(deep), len(watch), len(items))
+            await feishu_text(msg)
 
     # ── Phase 2: DIVE (Analyst) ──
 
@@ -656,17 +931,42 @@ class ClawsPipeline:
         log.info("Phase 2: DIVE (Analyst)")
         log.info("=" * 60)
 
+        can, reason = self.state.can_run("dive")
+        if not can:
+            log.info(f"跳过 DIVE: {reason}")
+            return
+
         filtered = _read_today("filtered")
         if "无记录" in filtered or len(filtered) < 50:
-            log.info("今日无筛选数据，跳过 DIVE")
-            return
+            fallback_date = self.state.find_latest_successful("sense")
+            if fallback_date:
+                log.info(f"今日无筛选数据，回退到 {fallback_date} 的数据")
+                fb_path = MEMORY_DIR / "filtered" / f"{fallback_date}.md"
+                filtered = _read(fb_path) if fb_path.exists() else ""
+            if not filtered or len(filtered) < 50:
+                log.info("无可用筛选数据，跳过 DIVE")
+                self.state.mark_skipped("dive", "无可用筛选数据")
+                return
+
+        self.state.mark_running("dive")
 
         prompt = _load_prompt(self.agents["analyst"].prompt_file,
                               taste_context=self._taste(),
                               filtered_items=filtered)
 
+        keywords = []
+        for line in filtered.split("\n"):
+            if line.startswith("### "):
+                kw = line.replace("### ", "").split("(")[0].strip()
+                if kw:
+                    keywords.append(kw)
+        memory_ctx = self._build_memory_context(keywords[:3])
+        if memory_ctx:
+            prompt += f"\n\n### 相关历史记忆\n\n{memory_ctx}"
+
         result = await self._call_agent("analyst", prompt, phase="dive")
         if result["error"]:
+            self.state.mark_failed("dive", result["error"])
             return
 
         today = _today()
@@ -679,11 +979,11 @@ class ClawsPipeline:
         out_path = MEMORY_DIR / "deep-dives" / f"{today}-{slug}.md"
         _write(out_path, f"# Deep Dive — {_now()}\n\n{result['content']}\n")
 
+        self.state.mark_success("dive")
+
         if meta:
-            insight = meta.get("key_insight", "")
-            items_str = ", ".join(meta.get("analyzed_items", [])[:2])
-            await feishu_card("🔬 CLAWS 深度分析",
-                              f"**分析目标**: {items_str}\n**核心洞察**: {insight}", "green")
+            msg = _fmt_dive(meta, result["content"])
+            await feishu_text(msg)
 
     # ── Phase 3: REFLECT + EVOLVE ──
 
@@ -691,6 +991,12 @@ class ClawsPipeline:
         log.info("=" * 60)
         log.info("Phase 3: REFLECT + EVOLVE")
         log.info("=" * 60)
+
+        can, reason = self.state.can_run("reflect")
+        if not can:
+            log.info(f"跳过 REFLECT: {reason}")
+            return
+        self.state.mark_running("reflect")
 
         exploration = f"### 原始采集\n{_read_today('raw')}\n\n### 筛选结果\n{_read_today('filtered')}\n\n### 深度分析\n{_read_today('deep-dives')}"
 
@@ -701,8 +1007,13 @@ class ClawsPipeline:
                               exploration_data=exploration,
                               review_feedback=feedback)
 
+        run_stats_ctx = self._build_run_stats_context()
+        if run_stats_ctx:
+            prompt += f"\n\n{run_stats_ctx}"
+
         result = await self._call_agent("evolve", prompt, phase="reflect")
         if result["error"]:
+            self.state.mark_failed("reflect", result["error"])
             return
 
         today = _today()
@@ -714,9 +1025,11 @@ class ClawsPipeline:
             log.warning("进化者响应 JSON 解析失败")
             ops_report("warning", "json_parse_failed", "Evolve JSON 解析失败",
                        detail=result["content"][:500])
+            self.state.mark_failed("reflect", "Evolve JSON 解析失败")
             return
 
         await self._apply_evolution(parsed, today)
+        self.state.mark_success("reflect")
 
     async def run_review(self) -> None:
         """Phase 4: REVIEW — 独立审查者 Agent，替代人工反馈回路。"""
@@ -724,10 +1037,18 @@ class ClawsPipeline:
         log.info("Phase 4: REVIEW (Automated Feedback)")
         log.info("=" * 60)
 
+        can, reason = self.state.can_run("review")
+        if not can:
+            log.info(f"跳过 REVIEW: {reason}")
+            return
+
         reflections = _read_today("reflections")
         if "无记录" in reflections:
             log.info("今日无反思数据，跳过 REVIEW")
+            self.state.mark_skipped("review", "今日无反思数据")
             return
+
+        self.state.mark_running("review")
 
         discoveries_raw = _read(MEMORY_DIR / "DISCOVERIES.md")
 
@@ -739,6 +1060,7 @@ class ClawsPipeline:
 
         result = await self._call_agent("reviewer", prompt, phase="review")
         if result["error"]:
+            self.state.mark_failed("review", result["error"])
             return
 
         today = _today()
@@ -757,13 +1079,18 @@ class ClawsPipeline:
                 _write(MEMORY_DIR / "feedback" / f"{today}.json",
                        json.dumps(feedback, ensure_ascii=False, indent=2))
 
-            await feishu_card("📋 CLAWS 审查报告",
-                              f"**评级**: {grade} | **可执行性**: {action_score}/10\n\n{verdict}", "orange")
+            msg = _fmt_review(parsed)
+            await feishu_text(msg)
+
+        self.state.mark_success("review")
 
     async def run_weekly(self) -> None:
         log.info("=" * 60)
         log.info("Phase 3+: WEEKLY DIGEST + TASTE OVERHAUL")
         log.info("=" * 60)
+
+        self.sessions.reset_all()
+        log.info("周度会话重置完成，下轮开始新会话")
 
         exploration = f"### 本周反思\n{_read_week('reflections')}\n\n### 本周筛选\n{_read_week('filtered')}\n\n### 本周深挖\n{_read_week('deep-dives')}"
 
@@ -774,7 +1101,10 @@ class ClawsPipeline:
                               exploration_data=exploration,
                               review_feedback=feedback)
 
-        prompt += """
+        week_stats = self.state.get_week_stats()
+        stats_block = self._format_week_stats(week_stats)
+
+        prompt += f"""
 
 ## 额外任务：周度品味大调整
 
@@ -782,7 +1112,12 @@ class ClawsPipeline:
 1. 对比品味参考源（Simon Willison, swyx, Karpathy）本周关注了什么
 2. 找到自己的探索盲区
 3. 大胆调整品味权重（允许 ±3 的变化幅度）
-4. 生成周报摘要"""
+4. 生成周报摘要
+5. 基于系统运行统计，建议参数调整（temperature、超时、重试次数）
+
+### 本周系统运行统计
+
+{stats_block}"""
 
         result = await self._call_agent("evolve", prompt, phase="weekly")
         if result["error"]:
@@ -794,7 +1129,8 @@ class ClawsPipeline:
         parsed = extract_json(result["content"])
         if parsed:
             await self._apply_evolution(parsed, _today())
-            await feishu_card("📊 CLAWS 周报", result["content"][:2000], "purple")
+            msg = _fmt_weekly(parsed, result["content"])
+            await feishu_text(msg)
 
     async def _apply_evolution(self, data: dict, today: str) -> None:
         """将进化者的输出应用到上下文文件 —— 这是自进化的核心。
@@ -803,8 +1139,6 @@ class ClawsPipeline:
         - TASTE.md / SOUL.md：由 Runner 写入（Evolve Agent Prompt 中不要求直接写文件）
         - taste-changelog.md / DISCOVERIES.md：由 Runner 追加
         """
-
-        push_parts: list[str] = []
 
         # 1. 品味进化：覆盖 TASTE.md
         taste_evo = data.get("taste_evolution", {})
@@ -818,34 +1152,28 @@ class ClawsPipeline:
             if changes:
                 version = taste_evo.get("version", "?")
                 changelog = f"\n## {today} — {version}\n\n"
-                change_summaries = []
                 for c in changes:
-                    changelog += f"- **{c.get('field', '?')}**: {c.get('old_value', '?')} → {c.get('new_value', '?')}\n"
+                    changelog += f"- {c.get('field', '?')}: {c.get('old_value', '?')} -> {c.get('new_value', '?')}\n"
                     changelog += f"  证据: {c.get('evidence', '无')}\n"
-                    change_summaries.append(f"  • {c.get('field', '?')}: {c.get('old_value', '?')[:30]} → {c.get('new_value', '?')[:30]}")
                 _append(MEMORY_DIR / "taste-changelog.md", changelog)
-                push_parts.append(f"**品味进化 → {version}**\n" + "\n".join(change_summaries[:5]))
 
         # 2. 灵魂进化：覆盖 SOUL.md
         new_soul = data.get("soul_evolution")
         if new_soul and new_soul != "null" and len(str(new_soul)) > 100:
             _write(ROOT / "SOUL.md", str(new_soul))
             log.info("🧬 SOUL.md 已进化")
-            push_parts.append("**灵魂文件已进化**")
 
         # 3. 发现沉淀：追加到 DISCOVERIES.md
         new_disc = data.get("new_discoveries", [])
         if new_disc:
             disc_path = MEMORY_DIR / "DISCOVERIES.md"
             entries = "\n"
-            disc_summaries = []
             for d in new_disc:
                 entries += f"### [{today}] {d.get('title', '?')}\n"
-                entries += f"- **领域**: {d.get('domain', '?')}\n"
-                entries += f"- **评分**: {d.get('score', '?')}/25\n"
-                entries += f"- **一句话**: {d.get('one_liner', '')}\n"
-                entries += f"- **状态**: {d.get('status', '🔴 新发现')}\n\n"
-                disc_summaries.append(f"  • {d.get('title', '?')} ({d.get('score', '?')}/25)")
+                entries += f"- 领域: {d.get('domain', '?')}\n"
+                entries += f"- 评分: {d.get('score', '?')}/25\n"
+                entries += f"- 一句话: {d.get('one_liner', '')}\n"
+                entries += f"- 状态: {d.get('status', '新发现')}\n\n"
 
             existing = _read(disc_path)
             if "等待" in existing:
@@ -854,30 +1182,27 @@ class ClawsPipeline:
                 existing = existing.replace("## 发现列表\n", f"## 发现列表\n{entries}")
             _write(disc_path, existing)
             log.info(f"📌 新增 {len(new_disc)} 条发现")
-            push_parts.append(f"**新增 {len(new_disc)} 条发现**\n" + "\n".join(disc_summaries[:5]))
 
         # 4. 反思统计
         refl = data.get("reflection", {})
         stats = refl.get("stats", {})
         if stats:
             stats_line = (
-                f"扫描{stats.get('scanned', '?')} → "
-                f"筛选{stats.get('filtered_in', '?')} → "
-                f"深挖{stats.get('deep_dived', '?')} → "
+                f"扫描{stats.get('scanned', '?')} -> "
+                f"筛选{stats.get('filtered_in', '?')} -> "
+                f"深挖{stats.get('deep_dived', '?')} -> "
                 f"发现{stats.get('discoveries', '?')} "
                 f"(通过率{stats.get('pass_rate_percent', '?')}%)"
             )
             log.info(f"📊 统计: {stats_line}")
-            push_parts.insert(0, f"**统计**: {stats_line}")
 
         # 5. 推送给主人
         push = data.get("push_to_human")
         if push and push != "null":
-            push_parts.append(f"\n**Evolve 说**: {str(push)[:300]}")
             log.info(f"📨 推送给主人: {str(push)[:150]}...")
 
-        if push_parts:
-            await feishu_card("🧬 CLAWS 反思 & 进化", "\n\n".join(push_parts), "orange")
+        msg = _fmt_reflect(data)
+        await feishu_text(msg)
 
 
 # ─── 调度器 ───

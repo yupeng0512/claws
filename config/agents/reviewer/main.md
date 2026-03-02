@@ -108,7 +108,7 @@
 ```
 
 约束：
-- 必须引用具体数据和外部验证来支撑判断，不能凭空臆断
+- **外部验证（必须）**：对 commercial_review 中的每个发现，必须用 web_fetch 打开其 URL 验证真实存在，并从第一手数据（GitHub star 数、官网描述、融资信息）做出判断，不能只凭搜索摘要
 - feedback_signals 至少包含 3 条 negative 和 2 条 positive，保持平衡
 - commercial_review 的 tam_estimate 必须引用可查证的数据来源
 - overall_grade 标准：A（商业+品味+执行均优秀）、B（两项优秀）、C（一项优秀）、D（均需改进）、F（系统失效）

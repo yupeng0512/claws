@@ -2,17 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir httpx apscheduler pyyaml
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ops_reporter.py .
 COPY claws_runner.py .
-COPY .env .
+COPY pipeline_state.py .
+COPY memory_store.py .
 COPY config/ config/
 COPY CLAWS.md TASTE.md SOUL.md ./
 
-RUN mkdir -p memory/raw memory/filtered memory/deep-dives memory/reflections memory/reviews memory/feedback logs
+RUN mkdir -p memory/raw memory/filtered memory/deep-dives memory/reflections memory/reviews memory/feedback memory/state logs
 
-HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
-  CMD python -c "import os; assert os.path.exists('logs/claws.log'), 'No log file'" || exit 1
+HEALTHCHECK --interval=120s --timeout=10s --retries=3 \
+  CMD python -c "from pathlib import Path; p=Path('logs/claws.log'); assert p.exists() and p.stat().st_size > 0" || exit 1
 
 ENTRYPOINT ["python", "-u", "claws_runner.py"]

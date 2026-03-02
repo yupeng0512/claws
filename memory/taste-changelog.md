@@ -77,3 +77,52 @@ _每次 TASTE.md 变更后，在这里追加一条记录。_
   证据: PageIndex 的 98.7% vs 50% 准确率差距证明推理式检索是 RAG 领域的重大突破，值得作为独立关注角度。同时 Skills vs MCP 的安全分析表明 Agent 安全架构应纳入 LLM 应用架构的关注范围
 - **Analyst 阶段 - 去重约束**: （无此约束） → 同一批次的 deep-dive 报告不得重复分析相同项目。如果两次 Analyst 运行分析了相同的候选集，第二次运行应被视为冗余并跳过
   证据: 本次产出了两份几乎完全相同的 deep-dive 报告（2026-02-28 22:28 和 22:33），分析了相同的 2 个项目，浪费了计算资源
+
+## 2026-02-28 — v0.1.3
+
+- **量化/交易技术 权重**: 5 → 7
+  证据: Reviewer 明确指出：'如果 CLAWS 的目标之一是交易系统建设，量化技术应该是权重 8-9 的核心关注，而非 Tier 2 末尾。当前权重导致 Scout 系统性忽略量化相关信号（如 FinanceBench 数据集本身就是量化/金融场景的重要基准）。' 本次调整 +2（单次上限），下周 WEEKLY 反思时根据实际信号质量决定是否继续提升至 8-9。
+- **品味参考源 - 新增 Gary Marcus**: 无 → Gary Marcus | Twitter/Substack | AI 局限性批评者 | 借鉴：他的技术局限性视角作为 AI 乐观叙事的反向校准信号
+  证据: Reviewer 反馈：'当前 5 位参考源全部是英语圈、全部是 AI/技术正向叙事者，缺乏批评性声音。建议新增 AI 怀疑者/批评者（Gary Marcus 的技术局限性视角）作为校准信号。'
+- **品味参考源 - 新增 Pieter Levels**: 无 → Pieter Levels | Twitter | 独立开发者盈利模式 | 借鉴：他的'用最少代码赚最多钱'视角，校准商业可行性判断
+  证据: Reviewer 反馈：'建议新增商业/变现视角（Pieter Levels 的独立开发者盈利模式）。这不是要降低 AI 关注度，而是引入校准信号。'
+- **扫描质量标准 - 最低采集量**: 每次扫描至少采集 15 条候选，GitHub Trending ≥10 条 + HN ≥5 条 → 每次扫描至少采集 20 条候选，GitHub Trending ≥15 条（必须遍历全部 25 个 Trending 项目后才能结束采集阶段）+ HN ≥5 条
+  证据: Reviewer 指出：'今日扫描仅 3 条（实际 5 条），但 GitHub Trending 当日实际有 10 个以上高相关项目（deer-flow、hello-agents、Agent-Skills-for-Context-Engineering、OpenSandbox 等）均未被采集。Scout 在找到 2-3 个高分项目后就停止了广度搜索。'
+- **反模式 - 幻觉项目型（精化）**: 幻觉项目型：无法通过直接访问 URL 验证真实存在的项目，直接从候选列表移除。 → 链接验证失败型：GitHub 项目链接无法直接访问时，不直接移除，而是执行'降级+追溯'流程——标记为'链接待验证'，尝试追溯正确仓库链接（如从组织页追溯到实际仓库），追溯成功则重新评估，追溯失败才移除。证据：Ruflo 项目真实存在（ruvnet/ruflo，15.7k stars），但原始链接指向组织页（github.com/ruflo）而非实际仓库（github.com/ruvnet/ruflo），被过度标记为'幻觉项目'是错误处理。
+  证据: Reviewer 指出：'Ruflo 确实真实存在（ruvnet/ruflo，15.7k stars，TypeScript），但原始筛选记录的链接是 github.com/ruflo（组织页面），而非 github.com/ruvnet/ruflo（实际仓库）。Evolve 将其标记为幻觉项目是过度反应；正确处理是链接验证失败，降级处理，追溯真实链接。'
+- **扫描质量标准 - Analyst 去重机制**: Analyst 去重：同一批次的 deep-dive 报告不得重复分析相同项目 → Analyst 去重：每次执行的第一步必须是检查 memory/deep-dives/ 目录的已有文件并读取当日已有报告的元数据，然后才决定分析哪些项目。同一批次的 deep-dive 报告不得重复分析相同项目。
+  证据: 两份重复 deep-dive 报告（22:28 和 22:33）的根本原因是 Analyst 未在执行前检查已有文件。Reviewer 指出：'建议 Analyst 每次执行的第一步必须是 ls memory/deep-dives/ 并读取当日已有报告的元数据。'
+- **行动建议粒度标准（新增）**: 无 → Analyst 报告中的'立即行动'必须包含：具体命令或步骤、明确截止时间（如'本周五前'）、可验证的完成标准。格式示例：'本周五前执行：git clone https://github.com/VectifyAI/PageIndex && pip install -r requirements.txt && 用 memory/ 目录下的 3 个 md 文件测试检索准确率，记录结果到 memory/experiments/pageindex-test.md'
+  证据: Reviewer 反馈：'当前 deep-dive 报告中的行动建议普遍过于模糊。立即行动必须包含具体命令/步骤/截止时间，有用程度比模糊建议高 10 倍。'
+
+## 2026-03-01 — v0.2.0
+
+- **量化/交易技术 权重**: 7 → 8
+  证据: 连续两天（2026-02-28 和 2026-03-01）量化信号产出为零，但这不是因为量化领域没有信号，而是因为 Scout 没有专项来源覆盖量化领域。Reviewer 明确指出'权重调整不等于行为改变'。WEEKLY 反思允许 ±3 幅度，本次 +1 是保守调整，同时配套增加量化专项来源（r/algotrading、QuantLib GitHub、Quantopian 社区），将权重调整转化为实际扫描行为。
+- **评分标准 - 深度维度（来源可信度上限）**: 深度 (1-5)：5: 有严谨的技术论证/实验数据/源码；4: 有实质性的架构设计或深入分析；3: 有一定深度但仍在表面；2: 偏概述/入门；1: 只是标题党或新闻稿 → 深度 (1-5)：5: 有严谨的技术论证/实验数据/源码（来源为官方/arXiv/一手报告）；4: 有实质性的架构设计或深入分析（来源为可信媒体/知名博客）；3: 有一定深度但仍在表面，或来源为二手聚合平台（CSDN/知乎/ithome 等）——**二手聚合来源深度上限为 3 分**；2: 偏概述/入门；1: 只是标题党或新闻稿。注：来源可信度直接影响深度评分上限，解决评分后再降级的逻辑不一致问题。
+  证据: Reviewer 指出：'DeepSeek V4 获得最高分 23/25，但来源为 ithome.com 二手聚合，被正确降级未进入 deep_dive。然而评分系统应该将来源可信度纳入计算，而非在评分后再做降级处理——这是逻辑不一致。' 同样，Geniusrise 来源 Marsala.dev 可信度存疑，但深度给了 4 分，导致总分虚高进入 deep_dive。
+- **扫描质量标准 - 领域覆盖检查清单（新增）**: 无 → **领域覆盖检查清单**：每次扫描结束前，Scout 必须检查以下领域是否有至少 1 条候选：① AI Agent 编排（Tier 1，权重 10）② LLM 应用架构（Tier 1，权重 9）③ 量化/交易技术（Tier 2，权重 8）。如果任一领域为零，必须补充扫描对应专项来源后才能结束采集阶段。量化专项来源：r/algotrading（Reddit）、QuantLib GitHub releases、GitHub Trending 中 Python/量化相关项目。
+  证据: Reviewer 反馈：'权重调整没有传导到 Scout 的实际扫描行为。建议在 Scout 提示中加入显式的领域覆盖检查清单。' 量化信号连续两天缺席是直接证据。
+- **扫描质量标准 - 数据可信度等级标注（新增）**: 无 → **数据可信度等级**：deep_dive 报告中引用的关键数据必须标注可信度等级：L1（官方报告/arXiv 论文/GitHub 官方数据）、L2（可信媒体/知名技术博客）、L3（社区讨论/HN/Reddit）、L4（未验证/单一来源）。L3/L4 数据在报告中引用时必须明确标注等级，不得作为结论性数据引用。
+  证据: Reviewer 指出：'HONK 的核心数据（10-20 Agent/人、PR 审查 15→2 分钟）来源为 HN 讨论，但在 deep_dive 中被引用为真实企业级数据，这是数据质量降级的典型案例。' 建议评分 -1（商业化/变现模式权重）。
+- **品味参考源 - 强制扫描 URL 列表（新增）**: 品味参考源列表仅描述'应该关注谁'，无强制扫描机制 → **强制扫描 URL 列表**（每次扫描必须覆盖，与 GitHub Trending 和 HN 并列）：① https://simonwillison.net/（Simon Willison Blog，每次扫描检查最新 3 篇）② https://garymarcus.substack.com/（Gary Marcus，每周至少检查 1 次）③ https://levels.io/（Pieter Levels，每周至少检查 1 次）。注：Gary Marcus 和 Pieter Levels 为周度检查（非每日），Simon Willison 为每日检查。
+  证据: Reviewer 指出：'Gary Marcus 和 Pieter Levels 被新增为参考源，但当前没有任何机制确保 Scout 实际访问这两个来源。品味参考源列表目前是装饰性的。' 本周两个新增参考源从未被实际访问，印证了这一问题。
+- **反模式 - 新增：跨批次重复型**: 无（现有去重规则仅覆盖同批次内的冗余重复型） → **跨批次重复型**：同一项目在不同扫描批次中重复出现时，如果已有 deep_dive 报告（检查 memory/deep-dives/ 目录），则在 filtered 层直接标注'已分析，跳过'，不再进入 deep_dive 队列。如果仅有 watch 记录，可重新评估是否升级为 deep_dive。证据：OpenClaw 在 2026-02-28 和 2026-03-01 两次 filtered 记录中均以高分出现，但第二次出现时已有 deep_dive 报告，属于无效重复。
+  证据: OpenClaw 在两次 filtered 记录中均出现（23-24/25），第二次出现时已有 deep_dive 报告，但仍被列为 deep_dive 候选，浪费了分析资源。
+- **商业化/变现模式 权重**: 6 → 7
+  证据: Reviewer 建议引入 Pieter Levels 的'最小单元的账'框架，并建议商业化/变现模式权重 +1。LangGraph 和去匿名化研究的 deep_dive 报告中，商业可行性分析质量明显提升（包含 MVP 投入估算、对标产品、回报周期），证明这个维度值得更高权重。WEEKLY 反思允许 ±3 幅度，本次 +1 是合理调整。
+- **Watchlist - 量化专项来源（新增）**: Watchlist 中无任何量化/交易专项来源 → 新增量化专项来源：r/algotrading（Reddit，量化策略讨论，🟡 中）、QuantLib GitHub（量化金融开源库，🟡 中）、Quantopian 社区存档/继承者（量化回测框架生态，🟡 中）。这三个来源是量化信号的专项补充，解决 Watchlist 量化盲区问题。
+  证据: 量化/交易技术权重已升至 8，但 Watchlist 中无任何量化专项来源，导致 Scout 即使想扫描量化信号也没有明确的扫描目标。这是结构性缺陷，而非执行问题。
+
+## 2026-03-01 — v0.2.1
+
+- **扫描质量标准 - 跨批次候选追踪**: 无跨批次合并要求 → 同一天不同批次的filtered条目必须在Evolve阶段做合并去重汇总，相同项目保留最高分版本，并标注'跨批次重复，已合并'
+  证据: Geniusrise在07:56批次为deep_dive但在19:01批次完全消失；QuantConnect同时出现在deep_dive和watch两个列表中——两个问题均源于缺乏跨批次合并机制
+- **反模式列表 - 新增'URL重复型'**: 无此反模式 → URL重复型：同一URL被分配给不同标题的条目（如LLM-Agent-UMF和OpenSSL漏洞发现共享同一ScienceDirect URL），直接标记为数据质量问题，两个条目均降级为watch并要求Scout下次扫描时重新验证
+  证据: LLM-Agent-UMF框架和AI驱动的OpenSSL漏洞自动发现共享完全相同的URL（https://www.sciencedirect.com/science/article/pii/S1566253525009273），至少一个条目的数据是错误的
+- **扫描质量标准 - Scout分批执行建议**: 每次扫描至少采集20条候选（无执行方式建议） → 每次扫描至少采集20条候选。如果单次扫描无法覆盖所有强制来源，Scout应分批执行：批次1覆盖GitHub Trending全部25个项目（目标≥15条），批次2覆盖HN Top 30（目标≥5条），批次3覆盖专项来源（Simon Willison + 量化专项）。每批次独立记录，Evolve阶段合并
+  证据: 今日两个批次均未达到20条最低采集量（07:56批次15条，19:01批次约8条），根本原因是单次扫描试图覆盖所有来源但受限于执行能力
+- **安全/隐私领域 - 关注角度扩展**: Agent安全（重点）、MCP供应链攻击、提示注入防御、LLM去匿名化威胁、数据保护 → Agent安全（重点）、MCP供应链攻击、提示注入防御、LLM去匿名化威胁（已有deep_dive，arXiv:2602.16800）、数据保护、RAG投毒攻击（PoisonedRAG类攻击手法，新增）
+  证据: PoisonedRAG在今日filtered中获得21/25高分，且直接关联LLM应用架构的核心安全风险，值得作为独立关注角度记录
+- **量化/交易技术 - Watchlist执行状态**: r/algotrading、QuantLib GitHub、Quantopian社区存档（v0.2.0新增，标注为中优先级） → r/algotrading、QuantLib GitHub、Quantopian社区存档（v0.2.0新增）。注意：今日扫描中量化专项来源仍未实际覆盖，QuantConnect/Lean的发现来自GitHub Trending的被动发现而非主动扫描量化专项来源。领域覆盖检查清单机制已在v0.2.0中建立，需在Scout执行层面强制落地
+  证据: 今日filtered中QuantConnect/Lean（22/25）来源标注为'GitHub Trending量化专题'，说明是被动发现而非主动扫描r/algotrading等专项来源的结果

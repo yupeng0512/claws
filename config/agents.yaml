@@ -17,7 +17,7 @@ runtime: knot
 
 defaults:
   base_url: ${KNOT_API_BASE_URL}
-  timeout: 180
+  timeout: 1800
   workspace_uuid: ${KNOT_WORKSPACE_UUID}
 
 agents:
@@ -30,6 +30,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/scout/main.md
     cloud_workspace: true
+    # 推荐 MCP: GitHub API (trending/stars/releases), RSS/HN (结构化采集)
     mcp_deps: []
 
   # ── 分析师：深度研究 + 结构化输出 ──
@@ -41,6 +42,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/analyst/main.md
     cloud_workspace: true
+    # 推荐 MCP: GitHub API (项目代码/issue/contributor 深度分析)
     mcp_deps: []
 
   # ── 进化者：反思 + 自进化 + 上下文改写 ──
@@ -63,6 +65,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/reviewer/main.md
     cloud_workspace: true
+    # 推荐 MCP: GitHub API (验证分析结论)
     mcp_deps: []
 
 # Pipeline 调度
