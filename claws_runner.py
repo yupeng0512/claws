@@ -388,6 +388,15 @@ class AgentConfig:
     mcp_deps: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ScheduleConfig:
+    phase: str
+    agent: str
+    interval_hours: int | None = None
+    cron: str | None = None
+    retention_days: int | None = None
+
+
 def _resolve_env_var(raw: str) -> str:
     """解析 ${ENV_VAR} 或 ${ENV_VAR:-default} 格式的环境变量引用。"""
     if not raw.startswith("${"):
@@ -453,6 +462,24 @@ def load_agents() -> dict[str, AgentConfig]:
     return agents
 
 
+def load_schedule() -> dict[str, ScheduleConfig]:
+    """从 agents.yaml 的 schedule 块读取调度配置。"""
+    yaml_path = ROOT / "config" / "agents.yaml"
+    if not yaml_path.exists() or yaml is None:
+        return {}
+    raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    schedules: dict[str, ScheduleConfig] = {}
+    for phase, spec in raw.get("schedule", {}).items():
+        schedules[phase] = ScheduleConfig(
+            phase=phase,
+            agent=spec.get("agent", ""),
+            interval_hours=spec.get("interval_hours"),
+            cron=spec.get("cron"),
+            retention_days=spec.get("retention_days"),
+        )
+    return schedules
+
+
 def validate_agents(agents: dict[str, AgentConfig]) -> None:
     """启动前校验：确保每个 Agent 都有有效的独立 ID 和认证凭证。"""
     errors = []
@@ -476,6 +503,12 @@ def validate_agents(agents: dict[str, AgentConfig]) -> None:
         log.info(f"云工作区: {sample.workspace_uuid}")
     else:
         log.warning("⚠️ 云工作区未配置，Agent 将无法读写 workspace 文件")
+
+    for name, cfg in agents.items():
+        if cfg.mcp_deps:
+            log.info(f"  [{name}] MCP 依赖: {', '.join(cfg.mcp_deps)} (需在 Knot Web UI 确认已配置)")
+        else:
+            log.info(f"  [{name}] 无 MCP 依赖")
 
 
 # ─── Knot AG-UI 客户端 ───
@@ -1205,23 +1238,89 @@ class ClawsPipeline:
         await feishu_text(msg)
 
 
+# ─── Memory 清理 ───
+
+_CLEANUP_SUBDIRS = ["raw", "filtered", "deep-dives", "reflections", "reviews", "feedback", "state"]
+
+
+async def cleanup_old_memory(memory_store: MemoryStore, retention_days: int = 30) -> None:
+    """Delete memory files older than retention_days and reindex."""
+    cutoff = datetime.now(CST) - timedelta(days=retention_days)
+    removed = 0
+    for subdir in _CLEANUP_SUBDIRS:
+        d = MEMORY_DIR / subdir
+        if not d.exists():
+            continue
+        for f in list(d.iterdir()):
+            try:
+                date_str = f.stem[:10]
+                fdate = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=CST)
+                if fdate < cutoff:
+                    f.unlink()
+                    removed += 1
+            except (ValueError, OSError):
+                continue
+    if removed:
+        memory_store.reindex()
+        log.info(f"🧹 Memory cleanup: removed {removed} files older than {retention_days} days")
+        ops_report("info", "memory_cleanup", f"清理 {removed} 个过期文件",
+                   detail=f"保留策略: {retention_days} 天")
+    else:
+        log.info("🧹 Memory cleanup: nothing to remove")
+
+
 # ─── 调度器 ───
 
-def build_scheduler(pipeline: ClawsPipeline) -> AsyncIOScheduler:
+def _parse_cron(expr: str, tz: str) -> CronTrigger:
+    """Parse a standard 5-field cron expression into a CronTrigger."""
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        raise ValueError(f"Invalid cron expression (need 5 fields): {expr}")
+    minute, hour, day, month, day_of_week = parts
+    return CronTrigger(
+        minute=minute, hour=hour, day=day, month=month,
+        day_of_week=day_of_week, timezone=tz,
+    )
+
+
+_PHASE_NAMES = {
+    "sense": "SENSE+FILTER", "dive": "DIVE", "reflect": "REFLECT+EVOLVE",
+    "review": "REVIEW", "weekly": "WEEKLY", "cleanup": "CLEANUP",
+}
+
+
+def build_scheduler(pipeline: ClawsPipeline, schedule: dict[str, ScheduleConfig]) -> AsyncIOScheduler:
     tz = os.getenv("CLAWS_TIMEZONE", "Asia/Shanghai")
-    interval = int(os.getenv("CLAWS_SENSE_INTERVAL_HOURS", "4"))
     scheduler = AsyncIOScheduler(timezone=tz)
 
-    scheduler.add_job(pipeline.run_sense, IntervalTrigger(hours=interval, timezone=tz),
-                      id="sense", name="SENSE+FILTER", max_instances=1, misfire_grace_time=600)
-    scheduler.add_job(pipeline.run_dive, CronTrigger(hour="10,22", timezone=tz),
-                      id="dive", name="DIVE", max_instances=1, misfire_grace_time=600)
-    scheduler.add_job(pipeline.run_reflect, CronTrigger(hour=21, timezone=tz),
-                      id="reflect", name="REFLECT+EVOLVE", max_instances=1, misfire_grace_time=600)
-    scheduler.add_job(pipeline.run_review, CronTrigger(hour=21, minute=30, timezone=tz),
-                      id="review", name="REVIEW", max_instances=1, misfire_grace_time=600)
-    scheduler.add_job(pipeline.run_weekly, CronTrigger(day_of_week="sun", hour=15, timezone=tz),
-                      id="weekly", name="WEEKLY", max_instances=1, misfire_grace_time=3600)
+    phase_runners = {
+        "sense": pipeline.run_sense, "dive": pipeline.run_dive,
+        "reflect": pipeline.run_reflect, "review": pipeline.run_review,
+        "weekly": pipeline.run_weekly,
+    }
+
+    for phase, cfg in schedule.items():
+        if phase == "cleanup":
+            continue
+        runner = phase_runners.get(phase)
+        if not runner:
+            log.warning(f"Unknown schedule phase: {phase}, skipping")
+            continue
+        name = _PHASE_NAMES.get(phase, phase.upper())
+        grace = 3600 if phase == "weekly" else 600
+        if cfg.interval_hours:
+            scheduler.add_job(runner, IntervalTrigger(hours=cfg.interval_hours, timezone=tz),
+                              id=phase, name=name, max_instances=1, misfire_grace_time=grace)
+        elif cfg.cron:
+            scheduler.add_job(runner, _parse_cron(cfg.cron, tz),
+                              id=phase, name=name, max_instances=1, misfire_grace_time=grace)
+        else:
+            log.warning(f"Schedule phase '{phase}' has no interval_hours or cron, skipping")
+
+    log.info(f"Scheduler: {len(scheduler.get_jobs())} jobs registered (tz={tz})")
+    for job in scheduler.get_jobs():
+        log.info(f"  [{job.id}] {job.name} -> {job.trigger}")
+
     return scheduler
 
 
@@ -1230,12 +1329,38 @@ def build_scheduler(pipeline: ClawsPipeline) -> AsyncIOScheduler:
 async def main_daemon() -> None:
     agents = load_agents()
     validate_agents(agents)
+    schedule = load_schedule()
     pipeline = ClawsPipeline(agents)
-    scheduler = build_scheduler(pipeline)
+    scheduler = build_scheduler(pipeline, schedule)
 
-    log.info("🦀 CLAWS Runner v2 启动")
+    # Memory cleanup scheduled task
+    cleanup_cfg = schedule.get("cleanup")
+    if cleanup_cfg and cleanup_cfg.cron:
+        retention = cleanup_cfg.retention_days or 30
+        tz = os.getenv("CLAWS_TIMEZONE", "Asia/Shanghai")
+        scheduler.add_job(
+            lambda: asyncio.ensure_future(cleanup_old_memory(pipeline.memory, retention)),
+            _parse_cron(cleanup_cfg.cron, tz),
+            id="cleanup", name="CLEANUP", max_instances=1, misfire_grace_time=3600,
+        )
+        log.info(f"Memory cleanup scheduled: {cleanup_cfg.cron} (retain {retention} days)")
+
+    log.info("🦀 CLAWS Runner v3 启动")
     for name, cfg in agents.items():
         log.info(f"  [{name}] id={cfg.agent_id[:12]}... token={cfg.api_token[:12]}... model={cfg.model} web={cfg.enable_web_search}")
+
+    # Start API server in background
+    api_port = int(os.getenv("CLAWS_API_PORT", "8080"))
+    try:
+        from api_server import create_app
+        import uvicorn
+        app = create_app(pipeline, scheduler, schedule)
+        api_config = uvicorn.Config(app, host="0.0.0.0", port=api_port, log_level="warning")
+        api_server = uvicorn.Server(api_config)
+        asyncio.create_task(api_server.serve())
+        log.info(f"Admin API + Dashboard: http://0.0.0.0:{api_port}/dashboard")
+    except ImportError:
+        log.warning("FastAPI/uvicorn not installed, API server disabled")
 
     scheduler.start()
     log.info("首次运行: 立即执行 SENSE+FILTER")

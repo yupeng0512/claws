@@ -126,3 +126,18 @@ _每次 TASTE.md 变更后，在这里追加一条记录。_
   证据: PoisonedRAG在今日filtered中获得21/25高分，且直接关联LLM应用架构的核心安全风险，值得作为独立关注角度记录
 - **量化/交易技术 - Watchlist执行状态**: r/algotrading、QuantLib GitHub、Quantopian社区存档（v0.2.0新增，标注为中优先级） → r/algotrading、QuantLib GitHub、Quantopian社区存档（v0.2.0新增）。注意：今日扫描中量化专项来源仍未实际覆盖，QuantConnect/Lean的发现来自GitHub Trending的被动发现而非主动扫描量化专项来源。领域覆盖检查清单机制已在v0.2.0中建立，需在Scout执行层面强制落地
   证据: 今日filtered中QuantConnect/Lean（22/25）来源标注为'GitHub Trending量化专题'，说明是被动发现而非主动扫描r/algotrading等专项来源的结果
+
+## 2026-03-02 — v0.2.2
+
+- 扫描质量标准 / 强制来源定义: 强制覆盖源: GitHub Trending + HN Top 30 + Simon Willison Blog，缺失任一视为不完整扫描 -> 强制覆盖源: GitHub Trending（≥15条）+ HN Top 30（≥5条）+ Simon Willison Blog（最新3篇）+ Gary Marcus Twitter/Substack（最新内容）+ Pieter Levels Twitter/Blog（最新内容），缺失任一视为不完整扫描。Gary Marcus和Pieter Levels与Simon Willison同等强制级别。
+  证据: Reviewer负反馈：'Gary Marcus 和 Pieter Levels 强制扫描执行缺失'——今日两个批次均未出现这两个来源，且今日75%发现为AI乐观叙事，正是最需要反向校准信号的时候。连续多日缺席说明规则未被执行，需要提升到与Simon Willison同等的强制级别。
+- 扫描质量标准 / 采集目标: 每次扫描至少采集20条候选，筛选后保留4-8条（目标通过率20-30%）。低于20条的扫描视为失败 -> 每次扫描至少采集30条候选（20条为绝对下限，30条为目标），筛选后保留6-9条（目标通过率20-30%）。低于20条的扫描视为失败，20-29条视为不完整扫描需补充。
+  证据: 本日采集恰好20条（下限），通过率40%严重偏高。根本原因是基数不足——在小基数下任何偏差都会放大通过率。提高目标采集量至30条可以在保持通过率合理的同时增加发现密度。
+- 反模式列表 / 新增：同账号可信度传染规则: （无此规则） -> 新增反模式：**同账号幻觉传染型**：如果同一GitHub账号的某个项目被Reviewer确认为幻觉URL或链接验证失败，则该账号下的其他项目自动触发'链接验证失败型'流程（降级+追溯），不得直接进入deep_dive，直到链接独立验证通过。
+  证据: ruvnet账号同时产出wifi-densepose（Reviewer确认幻觉URL）和ruflo（21/25，deep_dive），但账号可信度存疑。如果一个账号已有幻觉URL记录，其他项目也需要独立验证，不能因为分数高就直接deep_dive。
+- 反模式列表 / 新增：交叉验证文章冗余规则: （无此规则） -> 新增反模式：**主条目交叉验证冗余型**：同一项目的GitHub主条目和媒体分析文章（InfoQ/Medium等）不得同时进入filtered列表——媒体分析文章应作为主条目的'来源可信度加分'而非独立条目。如果主条目已进入deep_dive，对应的媒体分析文章直接降级为参考链接附在主条目中。
+  证据: 本日DeerFlow主条目（24/25，deep_dive）和InfoQ分析文章（22/25，watch）同时进入filtered，占用了2个槽位但信息高度重叠（>70%），违反了'冗余重复型'反模式的精神。需要明确规则防止此类冗余。
+- 筛选打分标准 / deep_dive触发条件: （无明确触发条件，依赖总分判断） -> 新增deep_dive触发条件（必须同时满足）：(1) 总分 ≥21/25；(2) 新颖性 ≥4；(3) 实用性 ≥4 OR 趋势信号 ≥4；(4) 链接已独立验证（非模型推断生成）。不满足条件4的高分项目进入watch+链接验证队列，验证通过后可升级为deep_dive。
+  证据: Reviewer redirect反馈：'建议重新定义deep_dive触发条件：新颖性≥4 AND（实用性≥4 OR 趋势信号≥4）AND 链接已验证'。本日RuFlo（21/25）在链接未验证情况下进入deep_dive，而ruflo所属的ruvnet账号已有幻觉URL记录，这是资源浪费。
+- REFLECT阶段 / 规则提炼标准输出: （无此要求） -> 新增REFLECT阶段标准输出项：每次REFLECT必须输出至少1条新规则或1条规则修订（记录在taste_evolution.changes中），不得输出空changes列表。规则来源：从当日错误、Reviewer反馈、或意外发现中提炼。
+  证据: Reviewer正反馈：'建议将此类规则提炼行为作为REFLECT阶段的标准输出项，每次反思必须输出至少1条新规则或1条规则修订'。v0.2.1的URL重复型反模式就是从错误中提炼规则的正向案例。

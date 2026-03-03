@@ -2,23 +2,24 @@
 
 ## 活跃问题
 
-### 1. config 目录双重来源
+### 1. Knot 平台 MCP 待配置
 
-- **症状**: Dockerfile 中 `COPY config/ config/` 将 Prompt 打入镜像，但 Prompt 修改后需要重建镜像才能生效
-- **风险**: 忘记重建镜像会导致容器内运行旧版 Prompt
-- **建议**: 考虑改为 volume 挂载 config 目录
+- **状态**: agents.yaml 已定义 mcp_deps，操作指南已写入 config/MCP_SETUP.md
+- **待办**: 人工到 Knot 平台 Web UI 为 Scout/Analyst/Reviewer 配置 GitHub Remote MCP
+- **URL**: `https://api.githubcopilot.com/mcp/` (免费托管，需 GitHub PAT)
 
-### 2. memory 目录无清理机制
+## 已解决问题
 
-- **症状**: 每日产生 raw/filtered/deep-dives/reflections/reviews/state 等文件，长期运行会累积
-- **影响**: 磁盘空间缓慢增长，SQLite 索引也会持续增大
-- **建议**: 增加定期清理策略（如保留最近 30 天）
+### 2. config 目录双重来源 (2026-03-02 修复)
 
-### 3. Knot 平台 MCP 未配置
+- docker-compose.yml 的 volume mount `./config:/app/config:ro` 在运行时覆盖 Dockerfile 的 COPY
+- 修改 Prompt 后 `docker compose restart claws` 即可生效，无需重建镜像
 
-- **症状**: 4 个 Agent 均未配置 MCP 服务，依赖 web_search 进行信息采集
-- **影响**: 无法使用结构化 API（如 GitHub API）获取精确数据
-- **建议**: 人工到 Knot 平台 Web UI 为 Scout/Analyst/Reviewer 配置推荐的 MCP
+### 3. memory 目录无清理机制 (2026-03-02 修复)
+
+- 新增 cleanup_old_memory() 函数 + APScheduler 每日凌晨 3:00 定时清理
+- 保留策略: 30 天（可通过 agents.yaml schedule.cleanup.retention_days 调整）
+- 保护列表: DISCOVERIES.md, taste-changelog.md, weekly-digest.md, sessions.json 等永不清理
 
 ## 已解决问题
 

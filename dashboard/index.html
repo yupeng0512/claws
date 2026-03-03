@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLAWS — Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">🦀</span>
+        <span class="logo-text">CLAWS</span>
+        <span class="logo-sub">Continuous Learning And Working System</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-beacon" id="beacon">
+        <span class="beacon-dot"></span>
+        <span class="beacon-label" id="beaconLabel">CONNECTING</span>
+      </div>
+      <div class="header-time" id="headerTime"></div>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="dashboard">
+      <span class="tab-icon">◈</span> 仪表盘
+    </button>
+    <button class="tab-btn" data-tab="discoveries">
+      <span class="tab-icon">◆</span> 发现
+    </button>
+    <button class="tab-btn" data-tab="memory">
+      <span class="tab-icon">◉</span> 记忆检索
+    </button>
+    <button class="tab-btn" data-tab="scheduler">
+      <span class="tab-icon">◎</span> 调度管理
+    </button>
+    <button class="tab-btn" data-tab="logs">
+      <span class="tab-icon">▤</span> 系统日志
+    </button>
+  </nav>
+
+  <!-- Tab Panels -->
+  <main class="main">
+
+    <!-- Dashboard Tab -->
+    <section class="tab-panel active" id="panel-dashboard">
+      <!-- Pipeline Flow -->
+      <div class="card pipeline-card">
+        <h2 class="card-title">Pipeline 状态</h2>
+        <div class="pipeline-flow" id="pipelineFlow">
+          <div class="pipeline-node" data-phase="sense">
+            <div class="node-status" id="status-sense"></div>
+            <div class="node-label">SENSE</div>
+          </div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node" data-phase="dive">
+            <div class="node-status" id="status-dive"></div>
+            <div class="node-label">DIVE</div>
+          </div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node" data-phase="reflect">
+            <div class="node-status" id="status-reflect"></div>
+            <div class="node-label">REFLECT</div>
+          </div>
+          <div class="pipeline-arrow">→</div>
+          <div class="pipeline-node" data-phase="review">
+            <div class="node-status" id="status-review"></div>
+            <div class="node-label">REVIEW</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <!-- Recent Runs -->
+        <div class="card">
+          <h2 class="card-title">最近执行</h2>
+          <div class="run-list" id="recentRuns">
+            <div class="empty-state">加载中...</div>
+          </div>
+        </div>
+        <!-- Memory Stats -->
+        <div class="card">
+          <h2 class="card-title">记忆存储</h2>
+          <div class="memory-grid" id="memoryStats">
+            <div class="empty-state">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Discoveries Tab -->
+    <section class="tab-panel" id="panel-discoveries">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">发现库</h2>
+          <div class="filter-row">
+            <input type="date" id="discDate" class="input-field">
+            <button class="btn btn-sm" onclick="loadDiscoveries()">筛选</button>
+            <button class="btn btn-sm btn-ghost" onclick="document.getElementById('discDate').value='';loadDiscoveries()">全部</button>
+          </div>
+        </div>
+        <div id="discoveriesList" class="discoveries-list">
+          <div class="empty-state">加载中...</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">今日探索</h2>
+        <div id="todayExploration" class="today-exploration">
+          <div class="empty-state">加载中...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Memory Search Tab -->
+    <section class="tab-panel" id="panel-memory">
+      <div class="card">
+        <h2 class="card-title">记忆检索 (FTS5)</h2>
+        <div class="search-bar">
+          <input type="text" id="memoryQuery" class="input-field input-lg" placeholder="搜索记忆..." onkeydown="if(event.key==='Enter')searchMemory()">
+          <button class="btn" onclick="searchMemory()">搜索</button>
+        </div>
+        <div id="memoryResults" class="memory-results">
+          <div class="empty-state">输入关键词开始检索</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scheduler Tab -->
+    <section class="tab-panel" id="panel-scheduler">
+      <div class="card">
+        <h2 class="card-title">调度配置</h2>
+        <div id="scheduleTable" class="schedule-table">
+          <div class="empty-state">加载中...</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="card-title">手动触发</h2>
+        <div class="trigger-grid">
+          <button class="btn btn-trigger" onclick="triggerPhase('sense')">
+            <span class="trigger-phase">SENSE</span>
+            <span class="trigger-desc">侦察 + 筛选</span>
+          </button>
+          <button class="btn btn-trigger" onclick="triggerPhase('dive')">
+            <span class="trigger-phase">DIVE</span>
+            <span class="trigger-desc">深度分析</span>
+          </button>
+          <button class="btn btn-trigger" onclick="triggerPhase('reflect')">
+            <span class="trigger-phase">REFLECT</span>
+            <span class="trigger-desc">反思 + 进化</span>
+          </button>
+          <button class="btn btn-trigger" onclick="triggerPhase('review')">
+            <span class="trigger-phase">REVIEW</span>
+            <span class="trigger-desc">独立审查</span>
+          </button>
+          <button class="btn btn-trigger" onclick="triggerPhase('weekly')">
+            <span class="trigger-phase">WEEKLY</span>
+            <span class="trigger-desc">周报 + 大调</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Logs Tab -->
+    <section class="tab-panel" id="panel-logs">
+      <div class="card">
+        <div class="card-header-row">
+          <h2 class="card-title">系统日志</h2>
+          <button class="btn btn-sm" onclick="loadLogs()">刷新</button>
+        </div>
+        <pre class="log-viewer" id="logViewer"><span class="empty-state">加载中...</span></pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

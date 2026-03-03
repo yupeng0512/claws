@@ -3,10 +3,18 @@ __pycache__/
 *.pyo
 .env
 logs/
+*.log
+.DS_Store
+
+# Runtime memory data
 memory/raw/
+memory/filtered/
 memory/deep-dives/
 memory/reflections/
 memory/reviews/
 memory/feedback/
-*.log
-.DS_Store
+memory/state/
+memory/sessions.json
+memory/.memory_index.db
+memory/.memory_index.db-shm
+memory/.memory_index.db-wal

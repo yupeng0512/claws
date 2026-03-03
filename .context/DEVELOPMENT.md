@@ -49,6 +49,13 @@ docker logs -f claws
 docker logs claws 2>&1 | grep -E "(Added job|Scheduler started|Phase)"
 ```
 
+Admin Dashboard 通过 Traefik 反向代理访问：`http://claws.dev.local/`
+
+Mac hosts 配置（如未添加）：
+```bash
+echo "<YOUR_MACHINE_IP> claws.dev.local" | sudo tee -a /etc/hosts
+```
+
 ## Agent Prompt 修改
 
 每个 Agent 的完整定义在 `config/agents/<name>/main.md`，格式为：
@@ -65,15 +72,30 @@ model: 模型名
 (以下所有内容作为实际 Prompt 发送给 Agent)
 ```
 
-修改 Prompt 后需要重建 Docker 镜像（config 挂载为 read-only，但 Prompt 在构建时 COPY 进镜像）。
+修改 Prompt **无需重建 Docker 镜像**。`docker-compose.yml` 通过 `./config:/app/config:ro` 将 config 目录挂载到容器内，运行时覆盖镜像中 COPY 的默认值。修改 `config/agents/<name>/main.md` 后重启容器即可生效：
 
-如果只改 `TASTE.md` / `SOUL.md` / `CLAWS.md`，无需重建（通过 volume 挂载）。
+```bash
+docker compose restart claws
+```
+
+同样，`TASTE.md` / `SOUL.md` / `CLAWS.md` 也通过 volume 挂载，即时生效。
 
 ## 调度配置
 
-调度节奏在 `claws_runner.py` 的 `build_scheduler()` 中硬编码。如需修改：
-- 扫描间隔: 环境变量 `CLAWS_SENSE_INTERVAL_HOURS`
-- 其他: 修改代码中的 CronTrigger 参数
+调度节奏从 `config/agents.yaml` 的 `schedule` 块读取，无需修改代码。修改 YAML 后重启容器即可生效：
+
+```yaml
+# config/agents.yaml — schedule 块示例
+schedule:
+  sense:
+    agent: scout
+    interval_hours: 4        # IntervalTrigger
+  dive:
+    agent: analyst
+    cron: "0 10,22 * * *"    # CronTrigger (标准 5 字段)
+```
+
+时区通过环境变量 `CLAWS_TIMEZONE` 控制（默认 `Asia/Shanghai`）。
 
 ## 日志和监控
 

@@ -30,8 +30,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/scout/main.md
     cloud_workspace: true
-    # 推荐 MCP: GitHub API (trending/stars/releases), RSS/HN (结构化采集)
-    mcp_deps: []
+    mcp_deps: [github]
 
   # ── 分析师：深度研究 + 结构化输出 ──
   analyst:
@@ -42,8 +41,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/analyst/main.md
     cloud_workspace: true
-    # 推荐 MCP: GitHub API (项目代码/issue/contributor 深度分析)
-    mcp_deps: []
+    mcp_deps: [github]
 
   # ── 进化者：反思 + 自进化 + 上下文改写 ──
   evolve:
@@ -65,8 +63,7 @@ agents:
     enable_web_search: true
     prompt_file: config/agents/reviewer/main.md
     cloud_workspace: true
-    # 推荐 MCP: GitHub API (验证分析结论)
-    mcp_deps: []
+    mcp_deps: [github]
 
 # Pipeline 调度
 schedule:
@@ -89,3 +86,7 @@ schedule:
   weekly:
     agent: evolve
     cron: "0 15 * * 0"
+
+  cleanup:
+    cron: "0 3 * * *"
+    retention_days: 30

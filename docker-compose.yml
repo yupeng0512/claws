@@ -13,8 +13,46 @@ services:
       - ./SOUL.md:/app/SOUL.md
       - ./CLAWS.md:/app/CLAWS.md
       - ./config:/app/config:ro
+      - ./dashboard:/app/dashboard:ro
     networks:
+      - traefik-net
       - ops-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.claws.rule=Host(`claws.dev.local`)"
+      - "traefik.http.routers.claws.entrypoints=web"
+      - "traefik.http.services.claws.loadbalancer.server.port=8080"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  fetch-mcp:
+    image: python:3.11-slim
+    container_name: fetch-mcp
+    restart: unless-stopped
+    command: >
+      bash -c "pip install --no-cache-dir mcp-fetch-streamablehttp-server &&
+               python -m mcp_fetch_streamablehttp_server"
+    environment:
+      - MCP_SERVER_NAME=mcp-fetch
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_PROTOCOL_VERSION=2025-06-18
+      - HOST=0.0.0.0
+      - PORT=3000
+    networks:
+      - traefik-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fetch-mcp.rule=Host(`fetch-mcp.dev.local`)"
+      - "traefik.http.routers.fetch-mcp.entrypoints=web"
+      - "traefik.http.services.fetch-mcp.loadbalancer.server.port=3000"
+      - "traefik.http.routers.fetch-mcp-knot.rule=PathPrefix(`/fetch-mcp`)"
+      - "traefik.http.routers.fetch-mcp-knot.entrypoints=web"
+      - "traefik.http.routers.fetch-mcp-knot.middlewares=fetch-mcp-strip"
+      - "traefik.http.routers.fetch-mcp-knot.service=fetch-mcp"
+      - "traefik.http.middlewares.fetch-mcp-strip.stripprefix.prefixes=/fetch-mcp"
     logging:
       driver: json-file
       options:
@@ -22,5 +60,7 @@ services:
         max-file: "3"
 
 networks:
+  traefik-net:
+    external: true
   ops-net:
     external: true

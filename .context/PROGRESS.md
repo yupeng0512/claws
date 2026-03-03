@@ -51,19 +51,23 @@
 - [x] feishu_text() 支持自动分段发送 (带序号标记)
 - [x] 侦察报告模板优化: 先摘要再详情，展示筛选理由
 
+### Phase 6: 系统化升级 (2026-03-02)
+- [x] Docker 配置优化: Dockerfile COPY 保留为 fallback，volume mount 覆盖，文档修正
+- [x] 调度节奏从 agents.yaml schedule 块读取，消除 build_scheduler() 硬编码
+- [x] MCP 配置清单: agents.yaml mcp_deps 更新 + config/MCP_SETUP.md 操作指南
+- [x] Memory 清理机制: cleanup_old_memory() + APScheduler 每日凌晨 3:00 定时清理（保留 30 天）
+- [x] HTTP API: FastAPI 10 个端点 (status/discoveries/schedule/trigger/memory/config/logs/health)
+- [x] Admin Dashboard: 工业终端风前端 (5 Tab: 仪表盘/发现/记忆检索/调度管理/系统日志)
+- [x] FastAPI + uvicorn 集成到 main_daemon()，独立线程并行运行
+
 ## 待优化项
 
 ### 高优先级
-- [ ] config 目录挂载策略统一 (Dockerfile COPY vs volume mount)
-- [ ] 调度节奏应从 agents.yaml schedule 配置中读取，而非硬编码
-- [ ] 为 Scout/Analyst/Reviewer 配置 Knot 平台 MCP 服务 (人工操作)
+- [ ] 为 Scout/Analyst/Reviewer 在 Knot 平台 Web UI 配置 GitHub MCP (参见 config/MCP_SETUP.md)
 
 ### 中优先级
-- [ ] memory 目录增加清理策略 (保留 30 天)
-- [ ] 增加 HTTP API 接口 (查询今日发现、手动触发阶段、查看调度状态)
 - [ ] 品味模型版本回滚能力
-- [ ] Pipeline 状态可视化 (Web Dashboard)
 
 ### 低优先级
-- [ ] Web Dashboard 展示发现和品味进化趋势
+- [ ] Dashboard 增加品味进化趋势图表
 - [ ] Knot Agent Skills 配置评估

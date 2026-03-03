@@ -135,16 +135,21 @@ Runner 不重造 Knot Agent 已有能力，专注于：
 
 ```
 Docker 容器 (claws)
-+-- 网络: ops-net (与 ops-dashboard 通信)
++-- 网络: traefik-net (Traefik 反向代理) + ops-net (内部通信)
++-- 域名: claws.dev.local (通过 Traefik 路由)
 +-- 卷挂载:
 |   +-- ./memory -> /app/memory (探索记忆 + 状态 + 会话 + 索引)
 |   +-- ./logs -> /app/logs (日志轮转)
 |   +-- ./TASTE.md / SOUL.md / CLAWS.md -> /app/ (品味模型)
-|   +-- ./config -> /app/config:ro (Agent 配置)
+|   +-- ./config -> /app/config:ro (Agent 配置 + Prompt)
+|   +-- ./dashboard -> /app/dashboard:ro (Admin Dashboard 前端)
 +-- 入口: python -u claws_runner.py
 +-- 健康检查: 120s 间隔, 检查 claws.log 存在且非空
 +-- 日志: json-file, 10MB x 3 轮转
 ```
+
+访问方式：`http://claws.dev.local/` (通过 Traefik 反向代理，无直接端口暴露)。
+配置挂载策略：Dockerfile 中 `COPY config/` 提供镜像内置默认值，`docker-compose.yml` 的 volume mount 在运行时覆盖。修改 Prompt 或调度配置后只需 `docker compose restart claws`，无需重建镜像。
 
 ## 与其他系统的集成
 
