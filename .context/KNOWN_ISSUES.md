@@ -25,7 +25,7 @@
 
 ### 4. Scout Agent 输出不稳定 (2026-03-01 修复)
 
-- deepseek-v3.2 偶尔在 JSON 前输出思考过程，约 10-15% 调用
+- claude-4.6-sonnet 偶尔会在 JSON 前后附加解释文本，需保留健壮解析
 - 修复: extract_json 迁移到 json_repair 第三方包 + Prompt 格式约束加强
 - 监控: ops_reporter 上报 json_parse_failed 事件
 - v3 增强: Pipeline 状态机记录失败并支持自动重试

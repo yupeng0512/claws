@@ -7,16 +7,16 @@
 ```
   APScheduler (本地调度器)
        │
-       ├── Phase 1: Scout (deepseek-v3.2 + web search)
+       ├── Phase 1: Scout (claude-4.6-sonnet + web search)
        │   └── SENSE + FILTER → memory/raw/ + memory/filtered/
        │
-       ├── Phase 2: Analyst (claude-4.5-sonnet + web search)
+       ├── Phase 2: Analyst (claude-4.6-sonnet + web search)
        │   └── DIVE → memory/deep-dives/
        │
-       ├── Phase 3: Evolve (claude-4.5-sonnet)
+       ├── Phase 3: Evolve (claude-4.6-sonnet)
        │   └── REFLECT → TASTE.md / SOUL.md 自进化
        │
-       └── Phase 4: Reviewer (claude-4.5-sonnet + web search)
+       └── Phase 4: Reviewer (claude-4.6-sonnet + web search)
            └── REVIEW → 商业评估 + 品味审计 + 盲区检测
 ```
 

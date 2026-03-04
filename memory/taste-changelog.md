@@ -141,3 +141,24 @@ _每次 TASTE.md 变更后，在这里追加一条记录。_
   证据: Reviewer redirect反馈：'建议重新定义deep_dive触发条件：新颖性≥4 AND（实用性≥4 OR 趋势信号≥4）AND 链接已验证'。本日RuFlo（21/25）在链接未验证情况下进入deep_dive，而ruflo所属的ruvnet账号已有幻觉URL记录，这是资源浪费。
 - REFLECT阶段 / 规则提炼标准输出: （无此要求） -> 新增REFLECT阶段标准输出项：每次REFLECT必须输出至少1条新规则或1条规则修订（记录在taste_evolution.changes中），不得输出空changes列表。规则来源：从当日错误、Reviewer反馈、或意外发现中提炼。
   证据: Reviewer正反馈：'建议将此类规则提炼行为作为REFLECT阶段的标准输出项，每次反思必须输出至少1条新规则或1条规则修订'。v0.2.1的URL重复型反模式就是从错误中提炼规则的正向案例。
+
+## 2026-03-03 — v0.2.3
+
+- 安全/隐私领域权重 Tier3→Tier2: 权重 5，Tier 3（保持雷达） -> 权重 7，Tier 2（积极关注）
+  证据: Reviewer redirect反馈：'MCP安全市场2032年$2,277亿，AI Agent安全已成独立高增长赛道，建议权重从5升至7，进入Tier 2'。今日deep_dive完成7层Agent安全攻击全景图（数据层/工具层/网关层/日志层/供应链层/社会工程层/模型层），ClawJacked（CVSS 8.8）+ClawHub恶意技能（71个恶意skills）+Agent-to-Agent攻击链（BobVonNeumann案例）三个高质量发现连续出现，安全领域信号密度已达Tier 1水平。权重+2符合单次调整上限。
+- 安全/隐私关注角度扩展: Agent 安全（重点）、MCP 供应链攻击、提示注入防御、LLM 去匿名化威胁、RAG 投毒攻击、数据保护 -> Agent 安全（重点）、MCP 供应链攻击、提示注入防御、LLM 去匿名化威胁（已有 deep_dive，arXiv:2602.16800）、RAG 投毒攻击（PoisonedRAG，v0.2.1 新增）、数据保护、**AI 技能市场供应链攻击**（ClawHub 恶意 SKILL.md，v0.2.3 新增）、**Agent-to-Agent 社会工程攻击**（BobVonNeumann 案例，v0.2.3 新增，全新攻击范式）
+  证据: 今日deep_dive完成7层攻击全景图，供应链层（ClawHub恶意技能，71个恶意skills，VirusTotal无效）和社会工程层（Agent-to-Agent攻击，BobVonNeumann案例）是此前未被命名的新攻击范式，值得作为独立关注角度持续追踪。
+- 反模式 / 同账号幻觉传染型 规则修订: 如果同一 GitHub 账号的某个项目被 Reviewer 确认为幻觉 URL 或链接验证失败，则该账号下的其他项目自动触发'链接验证失败型'流程（降级+追溯），不得直接进入 deep_dive，直到链接独立验证通过 -> 如果同一 GitHub 账号的某个项目被 Reviewer 确认为幻觉 URL 或链接验证失败，则该账号下的其他项目**触发独立链接验证**（而非自动降级）——验证通过则正常评估，验证失败才降级。**注意：Reviewer的纠错优先于规则自动触发**——如果 Reviewer 明确确认某账号项目为真实项目，应立即从可信度观察名单移除并重新评估。
+  证据: Reviewer负反馈：'wifi-densepose经独立验证为真实项目（9,100+ stars），之前的幻觉判断是错误的。需将ruvnet从可信度观察名单移除，重新评估ruflo的deep_dive资格。'原规则过于激进，导致ruflo被错误降级，浪费有效deep_dive机会。
+- 可信度观察名单 / ruvnet移除: 当前观察名单：ruvnet（证据：wifi-densepose链接被Reviewer确认为幻觉，2026-03-02） -> 当前观察名单：（空）。ruvnet已于2026-03-03移除，证据：Reviewer独立验证wifi-densepose为真实项目（9,100+ stars），原幻觉判断错误。ruflo重新进入deep_dive评估队列。
+  证据: Reviewer明确指出：'wifi-densepose经独立验证为真实项目（9,100+ stars），之前的幻觉判断是错误的。需将ruvnet从可信度观察名单移除。'
+- 扫描质量标准 / 新增承诺延后项目队列: （无此机制） -> 新增**承诺延后项目队列**：每次DIVE结束时，如果有明确承诺'下次DIVE分析'的项目，必须记录到承诺队列。下次DIVE开始前，必须先检查承诺队列，优先处理承诺项目，再处理新的filtered候选。承诺队列优先级高于新候选。当前承诺队列：memU（承诺于2026-03-02 22:00，已延后1次，下次DIVE必须分析）。
+  证据: 今日DIVE遗漏memU——昨日deep_dive报告明确承诺'2026-03-03 10:00 DIVE中分析'，但今日DIVE未兑现。memU是Agent记忆基础设施核心项目（23/25，个人知识系统领域权重8），遗漏代价高。
+- 扫描质量标准 / Simon Willison Blog文章时效约束: Simon Willison Blog（最新3篇），每日强制检查 -> Simon Willison Blog（最新3篇），每日强制检查。**新增约束：只接受发布日期在7天内的文章**，超过7天的文章不计入强制来源覆盖，Scout必须继续搜索直到找到7天内的内容或明确标注'本日无新文章'。
+  证据: Reviewer负反馈：'今日引用的是2026年1月的旧文章，Scout未实际访问simonwillison.net。不接受超过7天的文章作为最新内容。'连续多次执行质量不达标，需要在规则层面增加时效约束。
+- 项目/社区信号源 / 量化专项来源优先级升级: r/algotrading 🟡 中（量化专项来源）；QuantLib GitHub 🟡 中（量化专项来源）；Quantopian 社区存档/继承者 🟡 中（量化专项来源） -> r/algotrading 🔴 高（量化专项强制来源，v0.2.3升级，每次扫描必须覆盖，目标≥3条候选）；QuantLib GitHub 🟡 中（量化专项来源）；Quantopian 社区存档/继承者 🟡 中（量化专项来源）。**领域覆盖检查清单更新：量化领域必须有至少1条来自r/algotrading的主动扫描结果，不接受仅来自GitHub Trending的被动发现**。
+  证据: Reviewer负反馈：'权重升至8但QuantLib/Quantopian连续4天未主动扫描。权重调整未转化为行为改变。'今日唯一量化发现（CW信号）来自Danelfin平台，是被动发现。r/algotrading是最活跃的量化社区，应升为强制来源。
+- 筛选打分标准 / 强制校准源计入方式: （无区分，强制校准源与普通内容统一计入通过率） -> 新增**校准信号分类**：Gary Marcus、Pieter Levels、Simon Willison的内容单独计入'校准信号'类别，不计入通过率统计。通过率统计仅针对非强制来源的内容候选。校准信号每次扫描最多收录3条（每个强制来源1条），超出部分降级为参考链接。
+  证据: 本日通过率33%（10/30），其中3条为强制校准源（Marcus/Levels/Willison），如果单独统计，实际内容通过率为7/27=26%，完全在目标范围内。强制校准源的'强制收录'属性人为抬高了通过率统计，需要区分计算。
+- Scout执行checklist / Gary Marcus硬性阻断: Gary Marcus Twitter/Substack 强制来源，缺失视为不完整扫描 -> Gary Marcus Twitter/Substack 强制来源，**硬性阻断**：Gary Marcus内容缺失 → 扫描标记为不完整 → 必须补充后才能进入Analyst阶段（不得绕过）。Gary Marcus是AI乐观叙事的唯一强制反向校准信号，缺失会导致系统性乐观偏见。
+  证据: Reviewer负反馈：'v0.2.2已升为每日强制，但今日仍缺席。需在Scout checklist增加硬性阻断：Gary Marcus缺失→扫描不完整→必须补充后才能进入Analyst阶段。'今日虽然执行了Gary Marcus扫描，但规则层面需要明确硬性阻断而非软性提醒。

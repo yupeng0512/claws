@@ -118,7 +118,7 @@ TASTE.md 由 Evolve Agent 自主进化，人工也可以直接编辑：
 |------|------|------|
 | AI 平台 | Knot Agent (非 OpenAI API) | 企业内部免费，零成本 |
 | 调度 | 本地 APScheduler (非 Cron) | 异步友好，misfire 处理，max_instances=1 防重入 |
-| Scout 模型 | deepseek-v3.2 | 快速、低成本、web search 够用 |
-| 分析/审查模型 | claude-4.5-sonnet | 深度推理能力强 |
+| Scout 模型 | claude-4.6-sonnet | 当前统一模型，减少认知分裂 |
+| 分析/审查模型 | claude-4.6-sonnet | 深度推理能力强 |
 | 文件存储 | 本地 Markdown (非数据库) | 简单、可 Git 追踪、Agent 可直接读写 |
 | 写入者 | Runner 独占 (Agent 只输出 JSON) | 避免 Agent 云工作区与本地文件冲突 |

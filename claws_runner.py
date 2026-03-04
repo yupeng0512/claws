@@ -374,7 +374,7 @@ class AgentConfig:
     name: str
     description: str = ""
     agent_id: str = ""
-    model: str = "deepseek-v3.2"
+    model: str = "claude-4.6-sonnet"
     temperature: float = 0.3
     enable_web_search: bool = False
     prompt_file: str = ""
@@ -445,7 +445,7 @@ def load_agents() -> dict[str, AgentConfig]:
             name=name,
             description=spec.get("description", ""),
             agent_id=agent_id,
-            model=spec.get("model", defaults.get("model", "deepseek-v3.2")),
+            model=spec.get("model", defaults.get("model", "claude-4.6-sonnet")),
             temperature=spec.get("temperature", defaults.get("temperature", 0.3)),
             enable_web_search=spec.get("enable_web_search", False),
             prompt_file=spec.get("prompt_file", ""),

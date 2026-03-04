@@ -62,24 +62,24 @@ Runner 不重造 Knot Agent 已有能力，专注于：
 本地调度器 (APScheduler) + Pipeline State Machine
      |
      +-- Phase 1: Scout (侦察兵)
-     |   +-- 模型: deepseek-v3.2 + web search
+     |   +-- 模型: claude-4.6-sonnet + web search
      |   +-- 职责: 扫描 GitHub Trending / TrendRadar / HN / Twitter
      |   +-- 输出: JSON (items[] + scores + verdict)
      |
      +-- Phase 2: Analyst (分析师)
-     |   +-- 模型: claude-4.5-sonnet + web search
+     |   +-- 模型: claude-4.6-sonnet + web search
      |   +-- 职责: 对 deep_dive 项做深度研究 + 商业评估
      |   +-- 输出: Markdown 分析报告 + JSON metadata
      |   +-- 预注入: 相关历史记忆 (FTS5 检索)
      |
      +-- Phase 3: Evolve (进化者)
-     |   +-- 模型: claude-4.5-sonnet (无 web)
+     |   +-- 模型: claude-4.6-sonnet (无 web)
      |   +-- 职责: 反思探索质量，改写 TASTE.md / SOUL.md
      |   +-- 输出: JSON (taste_evolution + new_discoveries + reflection)
      |   +-- 预注入: 运行统计
      |
      +-- Phase 4: Reviewer (审查者)
-         +-- 模型: claude-4.5-sonnet + web search
+         +-- 模型: claude-4.6-sonnet + web search
          +-- 职责: 独立审计，替代人工反馈回路
          +-- 输出: JSON (overall_grade + feedback_signals)
 ```
