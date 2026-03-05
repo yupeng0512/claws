@@ -856,6 +856,13 @@ class ClawsPipeline:
                 parts.append(ctx)
         return "\n\n".join(parts)
 
+    FALLBACK_MODEL = "glm-5"
+    _QUOTA_KEYWORDS = ("额度已用尽", "quota", "rate limit")
+
+    def _is_quota_error(self, error: str) -> bool:
+        lower = error.lower()
+        return any(kw in lower for kw in self._QUOTA_KEYWORDS)
+
     async def _call_agent(self, name: str, prompt: str, phase: str = "", new_session: bool = False) -> dict[str, Any]:
         client = self.clients[name]
         cfg = self.agents[name]
@@ -864,6 +871,13 @@ class ClawsPipeline:
         start = time.monotonic()
         result = await client.chat(prompt, conversation_id=conv_id)
         elapsed = time.monotonic() - start
+
+        if result["error"] and self._is_quota_error(result["error"]) and cfg.model != self.FALLBACK_MODEL:
+            log.warning(f"{name} 主模型 {cfg.model} 额度耗尽，fallback → {self.FALLBACK_MODEL}")
+            result = await client.chat(prompt, model=self.FALLBACK_MODEL, conversation_id="")
+            elapsed = time.monotonic() - start
+            if not result["error"]:
+                log.info(f"{name} fallback {self.FALLBACK_MODEL} 成功 ({elapsed:.1f}s)")
 
         if result.get("conversation_id"):
             self.sessions.update(name, result["conversation_id"])
